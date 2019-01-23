@@ -37,11 +37,11 @@ class ProcessRunner(GeneralClass):
         """
         # filter out password from argument list, print command to execute
         filtered_command = re.sub("--password='?\w+'?", "--password='*'", command)
-        logger.debug("SUBPROCESS STARTING: {}".format(filtered_command))
+        logger.info("SUBPROCESS STARTING: {}".format(filtered_command))
 
         # start the xtrabackup process
         process = subprocess.Popen(command, stdout=PIPE, stderr=STDOUT, shell=True)
-        logger.debug("SUBPROCESS PID: {}".format(process.pid))
+        logger.info("SUBPROCESS PID: {}".format(process.pid))
 
         # real time logging/stdout output
         cmd_root = filtered_command.split(" ")[0].split("/")[-1]
@@ -54,7 +54,7 @@ class ProcessRunner(GeneralClass):
         # sleep() to ensure exit code is accurate... 2 seconds is probably way too much (?)
         time.sleep(2)
         exit_code = process.poll()
-        logger.debug("SUBPROCESS {} COMPLETED with exit code: {}".format(cmd_root, exit_code))
+        logger.info("SUBPROCESS {} COMPLETED with exit code: {}".format(cmd_root, exit_code))
 
         # return True or False.
         if exit_code == 0:
