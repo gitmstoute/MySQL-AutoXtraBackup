@@ -29,7 +29,6 @@ class GeneralClass:
             self.datadir = DB['datadir']
 
             LOG = con['Logging']
-            # TODO: Add option to suppress or enable xtrabackup process logging
             if 'log' in LOG:
                 self.log_level = LOG['log']
             if 'log_file_max_bytes' in LOG:

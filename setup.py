@@ -9,7 +9,8 @@ gen_conf.generate_config_file()
 setup(
     name='mysql-autoxtrabackup',
     version='1.5.5',
-    packages=['general_conf', 'backup_prepare', 'partial_recovery', 'master_backup_script', 'prepare_env_test_mode', 'process_runner'],
+    packages=['general_conf', 'backup_prepare', 'partial_recovery', 'master_backup_script', 'prepare_env_test_mode',
+              'process_runner'],
     package_data={
         'prepare_env_test_mode': ['*.sh', '*.sql']
     },
