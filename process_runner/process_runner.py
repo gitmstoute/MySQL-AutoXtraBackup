@@ -40,7 +40,10 @@ class ProcessRunner(GeneralClass):
         logger.debug("SUBPROCESS STARTING: {}".format(filtered_command))
 
         # start the xtrabackup process
-        process = subprocess.Popen(command, stdout=PIPE, stderr=STDOUT, shell=True)
+        # Fix for pycharm debugger, according to:
+        # https://thraxil.org/users/anders/posts/2008/03/13/Subprocess-Hanging-PIPE-is-your-enemy/
+        # process = subprocess.Popen(command, stdout=PIPE, stderr=STDOUT, shell=True)
+        process = subprocess.Popen(command, stdout=PIPE, stderr=STDOUT)
         logger.debug("SUBPROCESS PID: {}".format(process.pid))
 
         # real time logging/stdout output
