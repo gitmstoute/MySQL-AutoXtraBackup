@@ -5,6 +5,10 @@ import logging
 from general_conf import path_config
 logger = logging.getLogger(__name__)
 
+# TODO: Had a bad config, like "full_backup_interval = 23h day". Xtrabackup failed, with no clue in logs.
+# TODO: This one is important! Had to run manually to see python stacktrace, and again, no log emitted.
+# TODO: believe this also made a second directory in full/ which was empty (or full) but cleanup didn't occur.
+
 
 class GeneralClass:
 

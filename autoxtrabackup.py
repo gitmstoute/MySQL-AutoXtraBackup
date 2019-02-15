@@ -6,21 +6,33 @@ import os
 import pid
 import re
 import time
+import sys
 
 from logging.handlers import RotatingFileHandler
 from sys import platform as _platform
 from sys import exit
-from general_conf import path_config
 
 from backup_prepare.prepare import Prepare
 from general_conf.generalops import GeneralClass
+from general_conf import path_config
 from master_backup_script.backuper import Backup
 from partial_recovery.partial import PartialRecovery
 from prepare_env_test_mode.runner_test_mode import RunnerTestMode
+from process_runner.process_runner import ProcessRunner
+
+
+logger = logging.getLogger('')
+destinations_hash = {'linux': '/dev/log', 'linux2': '/dev/log', 'darwin': '/var/run/syslog'}
 
 
 def address_matcher(plt):
     return destinations_hash.get(plt, ('localhost', 514))
+
+
+handler = logging.handlers.SysLogHandler(address=address_matcher(_platform))
+
+# Set syslog for the root logger
+logger.addHandler(handler)
 
 
 def print_help(ctx, param, value):
@@ -171,13 +183,6 @@ def validate_file(file):
               help="Print help message and exit.")
 
 
-logger = logging.getLogger('')
-destinations_hash = {'linux': '/dev/log', 'linux2': '/dev/log', 'darwin': '/var/run/syslog'}
-handler = logging.handlers.SysLogHandler(address=address_matcher(_platform))
-# Set syslog for the root logger
-logger.addHandler(handler)
-
-
 @click.pass_context
 def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
                   verbose, log_file, log, defaults_file,
@@ -186,23 +191,16 @@ def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
 
     config = GeneralClass(defaults_file)
 
-    # set log level in order: 1. user argument 2. config file 3. @click default
-    if log is not None:
-        logger.setLevel(log)
-    elif 'log_level' in config:
-        logger.setLevel(config.log_level)
-    else:
-        # this is the fallback default log-level.
-        logger.setLevel('WARNING')
-    formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+    formatter = logging.Formatter(fmt='%(asctime)s %(levelname)s [%(module)s:%(lineno)d] %(message)s',
                                   datefmt='%Y-%m-%d %H:%M:%S')
 
-    ch = logging.StreamHandler()
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    # TODO: remove this line
-    logger.info("log level is: {}".format(logger.getEffectiveLevel()))
-    time.sleep(5)
+    if verbose:
+        ch = logging.StreamHandler()
+        # control console output log level
+        # todo: set back to INFO
+        ch.setLevel(logging.DEBUG)
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
 
     if log_file:
         try:
@@ -217,6 +215,15 @@ def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
             logger.addHandler(file_handler)
         except PermissionError as err:
             exit("{} Please consider to run as root or sudo".format(err))
+
+    # set log level in order: 1. user argument 2. config file 3. @click default
+    if log is not None:
+        logger.setLevel(log)
+    elif 'log_level' in config.__dict__:
+        logger.setLevel(config.log_level)
+    else:
+        # this is the fallback default log-level.
+        logger.setLevel('INFO')
 
     validate_file(defaults_file)
     pid_file = pid.PidFile(piddir=config.pid_dir)
@@ -326,6 +333,15 @@ def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
     except pid.PidFileError as error:
         logger.warning("Generic error with pid file: " + str(error))
 
+    logger.info("Xtrabackup command history:")
+    for i in ProcessRunner.xtrabackup_history_log:
+        logger.info(str(i))
+    logger.info("Autoxtrabackup completed successfully!")
+    time.sleep(10)
+    logger.info("we have slept")
+    return True
 
 if __name__ == "__main__":
+    # pylint: disable=no-value-for-parameter
     all_procedure()
+    logger.debug("Wellp, here's this line of code being executed gracefully.")

@@ -18,6 +18,7 @@ from general_conf import path_config
 from general_conf.generalops import GeneralClass
 from general_conf.check_env import CheckEnv
 from backup_prepare.prepare import Prepare
+# from process_runner.process_runner import ProcessHandler
 from process_runner.process_runner import ProcessRunner
 
 logger = logging.getLogger(__name__)
@@ -225,39 +226,40 @@ class Backup(GeneralClass):
                 if hasattr(self, 'prepare_archive'):
                     logger.info("Started to prepare backups, prior archiving!")
                     prepare_obj = Prepare(config=self.conf, dry_run=self.dry, tag=self.tag)
-                    prepare_obj.prepare_inc_full_backups()
+                    status = prepare_obj.prepare_inc_full_backups()
+                    if status:
+                        logger.info("Backups Prepared successfully...".format(status))
 
                 if hasattr(self, 'move_archive') and (int(self.move_archive) == 1):
                     dir_name = self.archive_dir + '/' + i + '_archive'
+                    logger.info("move_archive enabled. Moving {} to {}".format(self.backupdir, dir_name))
                     try:
                         shutil.copytree(self.backupdir, dir_name)
                     except Exception as err:
-                        logger.error("FAILED: Archiving ")
+                        logger.error("FAILED: Move Archive")
                         logger.error(err)
                         raise
                     else:
                         return True
                 else:
-                    # Multi-core tar utilizing pigz.
+                    logger.info("move_archive is disabled. archiving / compressing current_backup.")
+                    # Multi-core tar utilizing pigz.f
                     # Pigz default to number of cores available, or 8 if cannot be read.
 
                     # Test if pigz is available.
-                    try:
-                        subprocess.call(["pigz", "-q"])
-                        run_tar = "tar cvvf - %s %s | pigz -v > %s" % (
-                            self.full_dir, self.inc_dir, self.archive_dir + '/' + i + '.tar.gz')
-                    except OSError as e:
-                        if e.errno == os.errno.ENOENT:
-                            # handle file not found error.
-                            logger.warning("pigz executeable not available. Defaulting to singlecore tar")
-                            run_tar = "tar -zcf %s %s %s" % (
-                                self.archive_dir + '/' + i + '.tar.gz', self.full_dir, self.inc_dir)
-                        else:
-                            # Something else went wrong while trying to run `wget`
-                            raise RuntimeError("FAILED: Archiving -> {}".format(e))
-
-                    logger.info("Started to archive previous backups")
-                    logger.info("The following command will be executed {}".format(run_tar))
+                    logger.info("testing for pigz...")
+                    status = ProcessRunner.run_command("pigz --version")
+                    archive_file = self.archive_dir + '/' + i + '.tar.gz'
+                    if status:
+                        logger.info("Found pigz...")
+                        # run_tar = "tar cvvf - {} {} | pigz -v > {}" \
+                        run_tar = "tar --use-compress-program=pigz -cvf {} {} {}" \
+                            .format(archive_file, self.full_dir, self.inc_dir)
+                    else:
+                        # handle file not found error.
+                        logger.warning("pigz executeable not available. Defaulting to singlecore tar")
+                        run_tar = "tar -zcf {} {} {}"\
+                            .format(archive_file, self.full_dir, self.inc_dir)
                     status = ProcessRunner.run_command(run_tar)
                     if status:
                         logger.info("OK: Old full backup and incremental backups archived!")
@@ -304,7 +306,6 @@ class Backup(GeneralClass):
                 logger.info("DELETING {}".format(rm_dir))
             else:
                 logger.info("KEEPING {}".format(rm_dir))
-        time.sleep(10)
 
     def clean_inc_backup_dir(self):
         # Deleting incremental backups after taking new fresh full backup.
@@ -379,7 +380,6 @@ class Backup(GeneralClass):
             logger.warning("Partial Backup is enabled!")
         except AttributeError:
             pass
-
         return args
 
     def full_backup(self):
@@ -388,10 +388,11 @@ class Backup(GeneralClass):
         :return: True on success.
         :raise:  RuntimeError on error.
         """
+        logger.info("starting full backup to {}".format(self.full_dir))
         full_backup_dir = self.create_backup_directory(self.full_dir)
 
         # Taking Full backup
-        xtrabackup_cmd = "{} --defaults-file={} --user={} --password='{}' " \
+        xtrabackup_cmd = "{} --defaults-file={} --user={} --password={} " \
                " --target-dir={} --backup".format(
                 self.backup_tool,
                 self.mycnf,
@@ -426,7 +427,7 @@ class Backup(GeneralClass):
 
         # do the xtrabackup
         logger.info("Starting {}".format(self.backup_tool))
-        status = ProcessRunner().run_command(xtrabackup_cmd)
+        status = ProcessRunner.run_command(xtrabackup_cmd)
         status_str = 'OK' if status is True else 'FAILED'
         self.add_tag(backup_type='Full',
                      backup_size=self.get_folder_size(full_backup_dir),
@@ -452,7 +453,7 @@ class Backup(GeneralClass):
         if recent_inc == 0:  # If there is no incremental backup
 
             # Taking incremental backup.
-            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password='{}' " \
+            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password={} " \
                    "--target-dir={} --incremental-basedir={}/{} --backup".format(
                     self.backup_tool,
                     self.mycnf,
@@ -567,7 +568,7 @@ class Backup(GeneralClass):
 
         else:  # If there is already existing incremental backup
 
-            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password='{}'  " \
+            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password={}  " \
                    "--target-dir={} --incremental-basedir={}/{} --backup".format(
                     self.backup_tool,
                     self.mycnf,
@@ -669,7 +670,7 @@ class Backup(GeneralClass):
 
             if self.dry == 0:
                 logger.info("Starting {}".format(self.backup_tool))
-                status = ProcessRunner().run_command(xtrabackup_inc_cmd)
+                status = ProcessRunner.run_command(xtrabackup_inc_cmd)
                 status_str = 'OK' if status is True else 'FAILED'
                 self.add_tag(backup_type='Inc',
                              backup_size=self.get_folder_size(inc_backup_dir),
