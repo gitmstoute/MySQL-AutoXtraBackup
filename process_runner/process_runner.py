@@ -22,7 +22,11 @@ class ProcessHandler(GeneralClass):
     def __init__(self, config=path_config.config_path_file):
         self.conf = config
         GeneralClass.__init__(self, self.conf)
+        self._xtrabackup_history_log = [['command', 'xtrabackup_function', 'start time', 'end time', 'duration', 'exit code']]
 
+    @property
+    def xtrabackup_history_log(self):
+        return self._xtrabackup_history_log
 
     def run_command(self, command):
         """
@@ -41,12 +45,13 @@ class ProcessHandler(GeneralClass):
         logger.info("SUBPROCESS STARTING: {}".format(filtered_command))
         subprocess_args = self.command_to_args(command_str=command)
         # start the command subprocess
-
+        cmd_start = datetime.datetime.now()
         with subprocess.Popen(subprocess_args, stdout=PIPE, stderr=STDOUT) as process:
             for line in process.stdout:
                 logger.debug("[{}:{}] {}".format(subprocess_args[0], process.pid, line.decode("utf-8").strip("\n")))
         logger.info("SUBPROCESS {} COMPLETED with exit code: {}".format(subprocess_args[0], process.returncode))
-
+        cmd_end = datetime.datetime.now()
+        self.summarize_process(subprocess_args, cmd_start, cmd_end, process.returncode)
         # return True or False.
         if process.returncode == 0:
             return True
@@ -80,6 +85,50 @@ class ProcessHandler(GeneralClass):
             raise TypeError
         logger.debug("subprocess args are: {}".format(args))
         return args
+
+    @staticmethod
+    def represent_duration(start_time, end_time):
+        # https://gist.github.com/thatalextaylor/7408395
+        duration_delta = end_time - start_time
+        seconds = int(duration_delta.seconds)
+        days, seconds = divmod(seconds, 86400)
+        hours, seconds = divmod(seconds, 3600)
+        minutes, seconds = divmod(seconds, 60)
+        if days > 0:
+            return '%dd%dh%dm%ds' % (days, hours, minutes, seconds)
+        elif hours > 0:
+            return '%dh%dm%ds' % (hours, minutes, seconds)
+        elif minutes > 0:
+            return '%dm%ds' % (minutes, seconds)
+        else:
+            return '%ds' % (seconds,)
+
+    def summarize_process(self, args, cmd_start, cmd_end, return_code):
+        cmd_root = args[0].split("/")[-1:][0]
+        xtrabackup_function = None
+        if cmd_root == "xtrabackup":
+            if "--backup" in args:
+                xtrabackup_function = "backup"
+            elif "--prepare" in args and "--apply-log-only" not in args:
+                xtrabackup_function = "prepare"
+            elif "--prepare" in args and "--apply-log-only" in args:
+                xtrabackup_function = "prepare/apply-log-only"
+        if not xtrabackup_function:
+            for arg in args:
+                if re.search(r'(--decrypt)=?[\w]*', arg):
+                    xtrabackup_function = "decrypt"
+                elif re.search(r'(--decompress)=?[\w]*', arg):
+                    xtrabackup_function = "decompress"
+
+        if cmd_root != "pigz":
+            # this will be just the pigz --version call
+            self._xtrabackup_history_log.append([cmd_root,
+                                                 xtrabackup_function,
+                                                 cmd_start.strftime('%Y-%m-%d %H:%M:%S'),
+                                                 cmd_end.strftime('%Y-%m-%d %H:%M:%S'),
+                                                 self.represent_duration(cmd_start, cmd_end),
+                                                 return_code])
+        return True
 
 
 ProcessRunner = ProcessHandler()
