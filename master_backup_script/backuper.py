@@ -48,7 +48,7 @@ class Backup(GeneralClass):
             return True
 
         # Currently only support Inc and Full types, calculate name based on this
-        assert backup_type in ('Full', 'Inc'), "add_tag() backup_type argument must be 'Full' or 'Inc'"
+        assert backup_type in ('Full', 'Inc'), "add_tag(): backup_type {}: must be 'Full' or 'Inc'".format(backup_type)
         backup_name = self.recent_full_backup_file() if backup_type == 'Full' else self.recent_inc_backup_file()
 
         # Calculate more tag fields, create string
@@ -63,6 +63,7 @@ class Backup(GeneralClass):
                                                bk_timestamp=backup_timestamp,
                                                bk_size=backup_size,
                                                bk_tag=self.tag)
+
             backtags_file.write(backtag_final)
         return True
 
@@ -226,10 +227,13 @@ class Backup(GeneralClass):
                 if hasattr(self, 'prepare_archive'):
                     logger.debug("Started to prepare backups, prior archiving!")
                     prepare_obj = Prepare(config=self.conf, dry_run=self.dry, tag=self.tag)
-                    prepare_obj.prepare_inc_full_backups()
+                    status = prepare_obj.prepare_inc_full_backups()
+                    if status:
+                        logger.info("Backups Prepared successfully...".format(status))
 
                 if hasattr(self, 'move_archive') and (int(self.move_archive) == 1):
                     dir_name = self.archive_dir + '/' + i + '_archive'
+                    logger.info("move_archive enabled. Moving {} to {}".format(self.backupdir, dir_name))
                     try:
                         shutil.copytree(self.backupdir, dir_name)
                     except Exception as err:
@@ -305,7 +309,6 @@ class Backup(GeneralClass):
                 logger.debug("DELETING {}".format(rm_dir))
             else:
                 logger.debug("KEEPING {}".format(rm_dir))
-        time.sleep(10)
 
     def clean_inc_backup_dir(self):
         # Deleting incremental backups after taking new fresh full backup.
@@ -389,10 +392,11 @@ class Backup(GeneralClass):
         :return: True on success.
         :raise:  RuntimeError on error.
         """
+        logger.info("starting full backup to {}".format(self.full_dir))
         full_backup_dir = self.create_backup_directory(self.full_dir)
 
         # Taking Full backup
-        xtrabackup_cmd = "{} --defaults-file={} --user={} --password='{}' " \
+        xtrabackup_cmd = "{} --defaults-file={} --user={} --password={} " \
                " --target-dir={} --backup".format(
                 self.backup_tool,
                 self.mycnf,
@@ -427,7 +431,7 @@ class Backup(GeneralClass):
 
         # do the xtrabackup
         logger.debug("Starting {}".format(self.backup_tool))
-        status = ProcessRunner().run_command(xtrabackup_cmd)
+        status = ProcessRunner.run_command(xtrabackup_cmd)
         status_str = 'OK' if status is True else 'FAILED'
         self.add_tag(backup_type='Full',
                      backup_size=self.get_folder_size(full_backup_dir),
@@ -453,7 +457,7 @@ class Backup(GeneralClass):
         if recent_inc == 0:  # If there is no incremental backup
 
             # Taking incremental backup.
-            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password='{}' " \
+            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password={} " \
                    "--target-dir={} --incremental-basedir={}/{} --backup".format(
                     self.backup_tool,
                     self.mycnf,
@@ -568,7 +572,7 @@ class Backup(GeneralClass):
 
         else:  # If there is already existing incremental backup
 
-            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password='{}'  " \
+            xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password={}  " \
                    "--target-dir={} --incremental-basedir={}/{} --backup".format(
                     self.backup_tool,
                     self.mycnf,
@@ -670,7 +674,7 @@ class Backup(GeneralClass):
 
             if self.dry == 0:
                 logger.debug("Starting {}".format(self.backup_tool))
-                status = ProcessRunner().run_command(xtrabackup_inc_cmd)
+                status = ProcessRunner.run_command(xtrabackup_inc_cmd)
                 status_str = 'OK' if status is True else 'FAILED'
                 self.add_tag(backup_type='Inc',
                              backup_size=self.get_folder_size(inc_backup_dir),
