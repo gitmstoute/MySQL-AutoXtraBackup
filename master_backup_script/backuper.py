@@ -37,7 +37,8 @@ class Backup(GeneralClass):
         """
         Method for adding backup tags
         :param backup_type: The backup type - Full/Inc
-        :param backup_size: The size of the backup in human readable format
+        :param backup_size: The size of the backup in human readab
+        le format
         :param backup_status: Status: OK or Status: Failed
         :return: True if no exception
 
