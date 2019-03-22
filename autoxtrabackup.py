@@ -6,7 +6,6 @@ import os
 import pid
 import re
 import time
-import sys
 
 from logging.handlers import RotatingFileHandler
 from sys import platform as _platform
@@ -197,7 +196,7 @@ def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
     if verbose:
         ch = logging.StreamHandler()
         # control console output log level
-        ch.setLevel(logging.INFO)
+        ch.setLevel(logging.DEBUG)
         ch.setFormatter(formatter)
         logger.addHandler(ch)
 
@@ -316,7 +315,8 @@ def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
                     "Backup (pid: " + pid_str + ") has been running for logger than: " + str(
                         humanfriendly.format_timespan(
                             config.pid_runtime_warning)))
-        # logger.warn("Pid file already exists: " + str(error))
+        logger.warning("Pid file already exists: " + str(error))
+        raise error
     except pid.PidFileAlreadyRunningError as error:
         if hasattr(config, 'pid_runtime_warning'):
             if time.time() - os.stat(pid_file.filename).st_ctime > config.pid_runtime_warning:
@@ -326,17 +326,17 @@ def all_procedure(ctx, prepare, backup, partial, tag, show_tags,
                     "Backup (pid: " + pid_str + ") has been running for logger than: " + str(
                         humanfriendly.format_timespan(
                             config.pid_runtime_warning)))
-        # logger.warn("Pid already running: " + str(error))
+        logger.warning("Pid already running: " + str(error))
+        raise error
     except pid.PidFileUnreadableError as error:
         logger.warning("Pid file can not be read: " + str(error))
     except pid.PidFileError as error:
         logger.warning("Generic error with pid file: " + str(error))
 
     logger.info("Xtrabackup command history:")
-    for i in ProcessRunner.xtrabackup_history_log:
-        logger.info(str(i))
-    logger.info("Autoxtrabackup completed successfully!")
+    logger.info(ProcessRunner.xtrabackup_history_log)
     return True
+
 
 if __name__ == "__main__":
     all_procedure()

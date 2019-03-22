@@ -63,6 +63,11 @@ class GeneralClass:
                     BCK['full_backup_interval'])
             else:
                 self.full_backup_interval = 86400
+            if 'full_backup_ideal_hour' in BCK:
+                try:
+                    self.full_backup_ideal_hour = int(BCK['full_backup_ideal_hour'])
+                except TypeError as error:
+                    logger.critical("error reading full_backup_ideal_hour variables in config".format(error))
             if 'archive_dir' in BCK:
                 self.archive_dir = BCK['archive_dir']
             if 'prepare_archive' in BCK:

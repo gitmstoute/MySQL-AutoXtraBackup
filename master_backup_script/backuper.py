@@ -124,7 +124,7 @@ class Backup(GeneralClass):
                 total_size += os.path.getsize(fp)
         return total_size
 
-    def last_full_backup_date(self):
+    def backup_expired(self):
         """
         Check if last full backup date retired or not.
         :return: 1 if last full backup date older than given interval, 0 if it is newer.
@@ -138,9 +138,103 @@ class Backup(GeneralClass):
         # Finding if last full backup older than the interval or more from now!
 
         if (now - dir_date).total_seconds() >= self.full_backup_interval:
-            return 1
+            return True
         else:
-            return 0
+            return False
+
+    def average_autoxtrabackup_schedule(self):
+        """
+        if autoxtrabackup is scheduled by something like cron, we'll figure out how much time usually elapses
+        between runs
+        :return: int: estimated seconds between autoxtrabackup runs.
+        """
+        last_full = self.recent_full_backup_file()
+        if last_full:
+            last_full_backup = datetime.strptime(last_full, "%Y-%m-%d_%H-%M-%S")
+        else:
+            return None  # can't calculate this on the first run.
+        current_run = datetime.now()
+        time_since_full = (current_run - last_full_backup).total_seconds()
+        average_schedule_seconds = time_since_full / (self.count_inc_backups() + 1)  # +1 to include the full backup
+        return average_schedule_seconds
+
+    def full_backup_ideal_hour_check(self):
+        # todo: review this function
+        """
+        For backup schedules >= 1 day, determine if the user's preferred full_backup_ideal_time indicates
+        we should run a full backup even if the previous full backup is not expired.
+
+        For instance, User may want the backup full process (including prepare/archive) to occur at a time
+        when the db is less busy (say 4am) each day. We should decide if the cycle needs to be 'reset' to conduct the
+        full backup at the Admin's preferred full_backup_ideal_hour.
+
+        This should never delay a full backup; it should only initiate a full_backup early to 'reset' schedule.
+        :return: True if we should run a full backup now based on full_backup_ideal_time
+        """
+        logger.info("Checking if we should run a full backup now based on full_backup_ideal_hour.")
+        # some clues about the schedule
+        current_time = datetime.now()
+        last_full_backup = datetime.strptime(self.recent_full_backup_file(), "%Y-%m-%d_%H-%M-%S")
+        full_backup_age = (current_time - last_full_backup).total_seconds()
+        full_backup_time_to_expire = self.full_backup_interval - full_backup_age
+        average_time_between_runs = self.average_autoxtrabackup_schedule()
+        full_backup_occurred_today = True if datetime.date(last_full_backup) == datetime.date(current_time) else False
+
+        # log some details
+        logger.info("last_full_backup is {}".format(last_full_backup))
+        logger.info("Full backup age: {} seconds".format(full_backup_age))
+        logger.info("Full backup will expire in: {} seconds".format(full_backup_time_to_expire))
+        logger.info("Inc backups since last full: {}".format(self.count_inc_backups()))
+        logger.info("autoxtrabackup is being run approximately every {} hours"
+                    .format(average_time_between_runs / 3600))
+        logger.info("the ideal time to run the full backup is in hour {}".format(last_full_backup.hour))
+
+        # if full backup is expired, we always do a full backup.
+        if full_backup_time_to_expire < 0:
+            logger.info("full backup is expired. Running a full backup.")
+            return True
+
+        # some sanity checks...
+        if self.full_backup_interval < 86400:
+            logger.critical('Full_backup_interval is less than 1 day. Ignoring full_backup_ideal_hour')
+            return False
+        elif not isinstance(self.full_backup_ideal_hour, int):
+            logger.critical('Full_backup_ideal_hour must be int. Ignoring full_backup_ideal_hour')
+            return False
+        elif not 0 <= self.full_backup_ideal_hour <= 23:
+            logger.critical('Full_backup_ideal_hour must be int between 0 and 23. Ignoring full_backup_ideal_hour')
+            return False
+
+        # full_backup_ideal_hour logic below...
+
+        # this works because we ignore backup_interval less than 1 day
+        # todo: review how much time we should evaluate against (exactly 1 day? more?)
+        if self.full_backup_interval >= 86400 >= full_backup_time_to_expire:
+            # the full backup interval is at least 1d, and we're <24h from full_backup expiry.
+            # this is when we might want to try to shift the full backup schedule
+            logger.debug("START LOGIC")
+            if current_time.hour < self.full_backup_ideal_hour:
+                logger.info("It's earlier than full_backup_ideal_hour; Don't force a full backup`")
+                logger.debug("step1")
+                return False
+            if full_backup_occurred_today\
+                    and last_full_backup.hour < self.full_backup_ideal_hour <= current_time.hour:
+                # we did a full backup today, but it was before ideal hour
+                logger.debug("step2")
+                return True
+            elif not full_backup_occurred_today\
+                    and current_time.hour >= self.full_backup_ideal_hour:
+                # there hasn't been a full backup today, and we're currently in/past the ideal hour
+                logger.debug("step3")
+                return True
+            else:
+                logger.debug("step4")
+                return False
+
+        logger.debug("step5")
+        return False
+        # default to False, and let he existing logic decide what to do
+
 
     @staticmethod
     def create_backup_directory(directory):
@@ -159,18 +253,29 @@ class Backup(GeneralClass):
             raise RuntimeError("Something went wrong in create_backup_directory(): {}".format(err))
 
     def recent_full_backup_file(self):
-        # Return last full backup dir name
-
+        """
+        Return last increment backup dir name, or None if there are none
+        :return: str directory of the most recent full_backup (or None)
+        """
         if len(os.listdir(self.full_dir)) > 0:
             return max(os.listdir(self.full_dir))
-        return 0
+        return None
 
     def recent_inc_backup_file(self):
-        # Return last increment backup dir name
-
+        """
+        Return last increment backup dir name, or None if there are none
+        :return: str directory of the most recent inc_backup (or None)
+        """
         if len(os.listdir(self.inc_dir)) > 0:
             return max(os.listdir(self.inc_dir))
-        return 0
+        return None
+
+    def count_inc_backups(self):
+        """
+        Return a count of the incremental backups
+        :return: str directory of the most recent inc_backup (or None)
+        """
+        return len(os.listdir(self.inc_dir))
 
     def mysql_connection_flush_logs(self):
         """
@@ -429,7 +534,7 @@ class Backup(GeneralClass):
             return True
 
         # do the xtrabackup
-        logger.debug("Starting {}".format(self.backup_tool))
+        logger.info("Starting {}".format(self.backup_tool))
         status = ProcessRunner.run_command(xtrabackup_cmd)
         status_str = 'OK' if status is True else 'FAILED'
         self.add_tag(backup_type='Full',
@@ -453,7 +558,7 @@ class Backup(GeneralClass):
 
         # Checking if there is any incremental backup
 
-        if recent_inc == 0:  # If there is no incremental backup
+        if not recent_inc:  # If there is no incremental backup
 
             # Taking incremental backup.
             xtrabackup_inc_cmd = "{} --defaults-file={} --user={} --password={} " \
@@ -684,22 +789,25 @@ class Backup(GeneralClass):
         """
          This method at first checks full backup directory, if it is empty takes full backup.
          If it is not empty then checks for full backup time.
-         If the recent full backup  is taken 1 day ago, it takes full backup.
+         If the recent full backup  greater than full_backup_interval seconds ago, it takes full backup.
          In any other conditions it takes incremental backup.
         """
         # Workaround for circular import dependency error in Python
 
         # Creating object from CheckEnv class
         check_env_obj = CheckEnv(self.conf, full_dir=self.full_dir, inc_dir=self.inc_dir)
-
-        assert check_env_obj.check_all_env() is True, "environment checks failed!"
-        if self.recent_full_backup_file() == 0:
+        logger.debug("check env")
+        assert check_env_obj.check_all_env(), "environment checks failed!"
+        logger.debug("check for full backup")
+        logger.debug("full backup_file is {}".format(self.recent_full_backup_file()))
+        if not self.recent_full_backup_file():
+            # There is no full backup yet, let's make a first one
             logger.info("- - - - You have no backups : Taking very first Full Backup! - - - -")
 
             # Flushing Logs
             if self.mysql_connection_flush_logs():
 
-                # Taking fullbackup
+                # Taking full backup
                 if self.full_backup():
                     # Removing old inc backups
                     self.clean_inc_backup_dir()
@@ -710,9 +818,9 @@ class Backup(GeneralClass):
                 self.copy_backup_to_remote_host()
 
             return True
-
-        elif self.last_full_backup_date() == 1:
-            logger.info("- - - - Your full backup is timeout : Taking new Full Backup! - - - -")
+        # self.full_backup_ideal_hour_check() or
+        elif self.full_backup_ideal_hour_check() or self.backup_expired():
+            logger.info("- - - - Taking new Full Backup! - - - -")
 
             # Archiving backups
             if hasattr(self, 'archive_dir'):
@@ -742,12 +850,10 @@ class Backup(GeneralClass):
 
             return True
         else:
-
+            # take an incremental backup
             logger.info("- - - - You have a full backup that is less than {} seconds old. - - - -".format(
                 self.full_backup_interval))
             logger.info("- - - - We will take an incremental one based on recent Full Backup - - - -")
-
-            time.sleep(3)
 
             # Taking incremental backup
             self.inc_backup()
