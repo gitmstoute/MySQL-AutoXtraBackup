@@ -1,8 +1,11 @@
+import datetime
 import logging
 import re
+import shlex
 import subprocess
 import sys
 import time
+
 
 from subprocess import PIPE, STDOUT
 
@@ -63,3 +66,76 @@ class ProcessRunner(GeneralClass):
             # todo: optionally raise error instead of return false
             # todo: cnt'd or, if any subprocess fails, can we stop in a recoverable state?
             return False
+
+    @staticmethod
+    def command_to_args(command_str):
+        """
+        convert a string bash command to an arguments list, to use with subprocess
+
+        Most autoxtrabackup code creates a string command, e.g. "xtrabackup --prepare --target-dir..."
+        If we run a string command with subprocess.Popen, we require shell=True.
+        shell=True has security considerations (below), and we run autoxtrabackup with privileges (!).
+        https://docs.python.org/3/library/subprocess.html#security-considerations
+        So, convert to an args list and call Popen without shell=True.
+
+        :param command_str: string command to execute as a subprocess
+        :type command_str: str
+        :return: list of args to pass to subprocess.Popen.
+        :rtype: list
+        """
+        if isinstance(command_str, list):
+            # already a list
+            args = command_str
+        elif isinstance(command_str, str):
+            args = shlex.split(command_str)
+        else:
+            raise TypeError
+        logger.debug("subprocess args are: {}".format(args))
+        return args
+
+    @staticmethod
+    def represent_duration(start_time, end_time):
+        # https://gist.github.com/thatalextaylor/7408395
+        duration_delta = end_time - start_time
+        seconds = int(duration_delta.seconds)
+        days, seconds = divmod(seconds, 86400)
+        hours, seconds = divmod(seconds, 3600)
+        minutes, seconds = divmod(seconds, 60)
+        if days > 0:
+            return '%dd%dh%dm%ds' % (days, hours, minutes, seconds)
+        elif hours > 0:
+            return '%dh%dm%ds' % (hours, minutes, seconds)
+        elif minutes > 0:
+            return '%dm%ds' % (minutes, seconds)
+        else:
+            return '%ds' % (seconds,)
+
+    def summarize_process(self, args, cmd_start, cmd_end, return_code):
+        cmd_root = args[0].split("/")[-1:][0]
+        xtrabackup_function = None
+        if cmd_root == "xtrabackup":
+            if "--backup" in args:
+                xtrabackup_function = "backup"
+            elif "--prepare" in args and "--apply-log-only" not in args:
+                xtrabackup_function = "prepare"
+            elif "--prepare" in args and "--apply-log-only" in args:
+                xtrabackup_function = "prepare/apply-log-only"
+        if not xtrabackup_function:
+            for arg in args:
+                if re.search(r'(--decrypt)=?[\w]*', arg):
+                    xtrabackup_function = "decrypt"
+                elif re.search(r'(--decompress)=?[\w]*', arg):
+                    xtrabackup_function = "decompress"
+
+        if cmd_root != "pigz":
+            # this will be just the pigz --version call
+            self._xtrabackup_history_log.append([cmd_root,
+                                                 xtrabackup_function,
+                                                 cmd_start.strftime('%Y-%m-%d %H:%M:%S'),
+                                                 cmd_end.strftime('%Y-%m-%d %H:%M:%S'),
+                                                 self.represent_duration(cmd_start, cmd_end),
+                                                 return_code])
+        return True
+
+
+ProcessRunner = ProcessRunner()
