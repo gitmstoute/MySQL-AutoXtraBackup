@@ -4,6 +4,7 @@ import subprocess
 import os
 from general_conf.generalops import GeneralClass
 from general_conf import path_config
+from process_runner.process_runner import ProcessRunner
 
 import logging
 logger = logging.getLogger(__name__)
@@ -19,18 +20,19 @@ class CheckEnv(GeneralClass):
         if inc_dir:
             self.inc_dir = inc_dir
 
-    def check_mysql_uptime(self, options=None):
+    def check_mysql_state(self, options=None):
         '''
-        Method for checking if MySQL server is up or not.
+        Method for checking if MySQL server is up or not, and whether the supplied credentials allow connection.
         :param options: Passed options to connect to MySQL server if None, then going to get it from conf file
         :return: True on success, raise RuntimeError on error.
         '''
         if options is None:
 
-            statusargs = "{} --defaults-file={} --user={} --password='{}' status".format(self.mysqladmin,
-                                                                                   self.mycnf,
-                                                                                   self.mysql_user,
-                                                                                   self.mysql_password)
+            statusargs = "{} --defaults-file={} --user={} --password='{}' status" \
+                .format(self.mysqladmin,
+                        self.mycnf,
+                        self.mysql_user,
+                        self.mysql_password)
 
             if hasattr(self, 'mysql_socket'):
                 statusargs += " --socket={}".format(self.mysql_socket)
@@ -48,7 +50,8 @@ class CheckEnv(GeneralClass):
 
         logger.info("Running mysqladmin command -> {}".format(filteredargs))
 
-        status, output = subprocess.getstatusoutput(statusargs)
+        status = ProcessRunner.run_command(statusargs)
+        #status, output = subprocess.getstatusoutput(statusargs)
 
         if status == 0:
             logger.info('OK: Server is Up and running')
@@ -198,7 +201,7 @@ class CheckEnv(GeneralClass):
         :return: True on success, raise RuntimeError on error.
         '''
         try:
-            self.check_mysql_uptime()
+            self.check_mysql_state()
             self.check_mysql_mysql()
             self.check_mysql_mysqladmin()
             self.check_mysql_conf()

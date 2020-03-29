@@ -23,6 +23,7 @@ class ProcessHandler(GeneralClass):
         self.conf = config
         GeneralClass.__init__(self, self.conf)
         self._xtrabackup_history_log = [['command', 'xtrabackup_function', 'start time', 'end time', 'duration', 'exit code']]
+        self.process_last_line = ""
 
     @property
     def xtrabackup_history_log(self):
@@ -40,7 +41,7 @@ class ProcessHandler(GeneralClass):
         :rtype: bool
         """
         # filter out password from argument list, print command to execute
-
+        self.process_last_line = ""
         filtered_command = re.sub("--password='?\w+'?", "--password='*'", command)
         logger.info("SUBPROCESS STARTING: {}".format(filtered_command))
         subprocess_args = self.command_to_args(command_str=command)
@@ -49,6 +50,7 @@ class ProcessHandler(GeneralClass):
         with subprocess.Popen(subprocess_args, stdout=PIPE, stderr=STDOUT) as process:
             for line in process.stdout:
                 logger.debug("[{}:{}] {}".format(subprocess_args[0], process.pid, line.decode("utf-8").strip("\n")))
+        self.process_last_line = line.decode("utf-8").strip("\n")
         logger.info("SUBPROCESS {} COMPLETED with exit code: {}".format(subprocess_args[0], process.returncode))
         cmd_end = datetime.datetime.now()
         self.summarize_process(subprocess_args, cmd_start, cmd_end, process.returncode)
@@ -58,7 +60,11 @@ class ProcessHandler(GeneralClass):
         else:
             # todo: optionally raise error instead of return false
             # todo: cnt'd or, if any subprocess fails, can we stop in a recoverable state?
-            raise ChildProcessError("SUBPROCESS FAILED! >> {}".format(filtered_command))
+            fail_message = "SUBPROCESS FAILED! Command:  {}".format(filtered_command)
+            logger.error(fail_message)
+            logger.error("The last line emitted by the subprocess was:")
+            logger.error("> " + self.process_last_line)
+            raise ChildProcessError()
             return False
 
     @staticmethod
