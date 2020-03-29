@@ -14,7 +14,7 @@ import pid
 from backup_prepare.prepare import Prepare
 from general_conf import path_config
 from general_conf.generalops import GeneralClass
-from master_backup_script.backuper import Backup
+from backup_backup.backuper import Backup
 from partial_recovery.partial import PartialRecovery
 from process_runner.process_runner import ProcessRunner
 
@@ -48,7 +48,7 @@ def print_version(ctx, param, value):
     click.echo("Email: rzayev.shahriyar@yandex.com")
     click.echo(
         "Based on Percona XtraBackup: https://github.com/percona/percona-xtrabackup/")
-    click.echo('MySQL-AutoXtraBackup Version: 1.5.5')
+    click.echo('MySQL-AutoXtraBackup Version: 2.0')
     ctx.exit()
 
 
